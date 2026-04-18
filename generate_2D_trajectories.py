@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SimulationConfig:
     """Configuration for trajectory simulation."""
-    num_agents: int = 5 #100
+    num_agents: int = 30 #100
     time_horizon: int = 10
     dim: int = 2
     x_bounds: Tuple[float, float] = (-10.0, 10.0)

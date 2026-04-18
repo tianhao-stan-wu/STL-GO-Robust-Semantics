@@ -189,7 +189,7 @@ def plot_graph_over_time(positions, graph_sequence, title_prefix, weighted=False
         plt.gca().set_aspect('equal', adjustable='box')
         plt.grid(True)
 
-        plt.pause(1)
+        plt.pause(0.5)
         plt.clf()
 
     plt.close()
