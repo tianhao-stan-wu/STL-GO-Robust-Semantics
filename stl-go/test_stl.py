@@ -7,7 +7,7 @@ from evaluator import evaluate
 # ---------------------------------------------------------------------------
 # Trajectory and formula definitions
 # ---------------------------------------------------------------------------
-traj = [1.0, 2.0, -1.0, 3.0, 0.5]
+traj = {0: [1.0, 2.0, -1.0, 3.0, 0.5]}
 mu   = Predicate(mu=lambda x: x, label="x")
 mu2  = Predicate(mu=lambda x: x - 2, label="x-2")   # satisfied iff x >= 2
 INF  = float('inf')
@@ -71,7 +71,9 @@ algebras = [
 for alg_name, alg, checker, expected in algebras:
     print(f"\n=== {alg_name} ===")
     for test_name, (formula, t, agent_id) in tests.items():
-        result = evaluate(traj, formula, alg, t=t, agent_id=agent_id)
+        result = evaluate(traj, None, formula, alg, t=t, agent_id=agent_id, aggregator = None)
         checker(test_name, result, expected[test_name])
 
 print("\nAll tests passed.")
+
+
