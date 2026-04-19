@@ -46,6 +46,8 @@ def _min_max(values, E):
     upper = float("inf") if math.isinf(e2) else -r(int(e2) + 1)
     return min(r(int(e1)), upper)
 
+
+
 # def _empty_result(E):
 #     """No eligible neighbors: satisfied iff 0 falls in E."""
 #     return float('inf') if E[0] == 0 else float('-inf')

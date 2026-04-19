@@ -1,7 +1,7 @@
 """
 Algebraic structures for STL-GO semantics.
 
-Each algebra defines the operations used by the evaluator for Boolean/temporal
+Each algebra defines the semiring operations used by the evaluator for Boolean/temporal
 operators. New algebras just subclass Algebra and implement the abstract methods.
 """
 

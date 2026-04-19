@@ -6,6 +6,7 @@ Graphs are represented as dense matrix
 from typing import Dict, List, Tuple
 import numpy as np
 
+
 def get_neighbors(
     graphs: Dict[str, np.ndarray],
     graph_type: str,
