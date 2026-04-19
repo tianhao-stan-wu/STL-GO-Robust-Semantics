@@ -7,9 +7,10 @@ Each function takes:
   bot    : algebra's bottom value (threshold between sat and viol)
 and returns a single scalar.
 """
+import math
 
 
-def aggregate(values, E, method, bot):
+def aggregate(values, E, method, bot=None):
     """Dispatch to chosen aggregation method."""
     if not values:
         return _empty_result(E)
@@ -35,12 +36,15 @@ def _min_max(values, E):
     e1, e2 = E
     vals = sorted(values, reverse=True)
 
-    def r(k):
-        # 1-indexed order statistic; convention r(k) = -inf for k > len(vals)
-        return vals[k - 1] if 1 <= k <= len(vals) else float("-inf")
+    def r(k: int) -> float:
+        if k == 0:
+            return float("inf")
+        if 1 <= k <= len(vals):
+            return float(vals[k - 1])
+        return float("-inf")
 
-    return min(r(e1), -r(e2 + 1))
-    
+    upper = float("inf") if math.isinf(e2) else -r(int(e2) + 1)
+    return min(r(int(e1)), upper)
 
 # def _empty_result(E):
 #     """No eligible neighbors: satisfied iff 0 falls in E."""

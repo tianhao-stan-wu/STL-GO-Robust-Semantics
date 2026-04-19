@@ -24,6 +24,8 @@ import numpy as np
 
 from syntax import Predicate, In, Out, AgentFormula
 from algebra import MinMaxAlgebra
+from graph_ops import get_neighbors
+from evaluator import evaluate
 
 
 @dataclass
@@ -76,63 +78,30 @@ def load_generated_data(path: str) -> Dict[str, np.ndarray]:
 
 
 # ---------------------------------------------------------------------------
-# Undirected neighbor lookup
-# ---------------------------------------------------------------------------
-
-def get_neighbors_undirected(
-    graphs: Dict[str, np.ndarray],
-    graph_type: str,
-    t: int,
-    agent_id: int,
-    W: Tuple[float, float],
-) -> List[int]:
-    """
-    Return neighbors of agent_id at time t in an undirected graph.
-
-    The graph is represented as a dense matrix G[t, i, j].
-    For an undirected graph, we treat i--j as present if either orientation
-    carries a nonzero weight. The effective weight is the max of the two.
-    """
-    w_low, w_high = W
-    mat = graphs[graph_type][t]
-    n = mat.shape[0]
-
-    neighbors = []
-    for j in range(n):
-        if j == agent_id:
-            continue
-        w = max(float(mat[agent_id, j]), float(mat[j, agent_id]))
-        if w != 0.0 and (w_low <= w <= w_high):
-            neighbors.append(j)
-
-    return neighbors
-
-
-# ---------------------------------------------------------------------------
 # Aggregator: min-max order statistics
 # ---------------------------------------------------------------------------
 
-def aggregate_min_max(values: List[float], E: Tuple[int, int]) -> float:
-    """
-    Order-statistic aggregator for interval E = [e1, e2]:
+# def aggregate_min_max(values: List[float], E: Tuple[int, int]) -> float:
+#     """
+#     Order-statistic aggregator for interval E = [e1, e2]:
 
-        min(r_(e1), -r_(e2+1))
+#         min(r_(e1), -r_(e2+1))
 
-    where values are sorted descending and r_(k) = -inf for k > len(values),
-    with the convention r_(0) = +inf so lower bound e1=0 is vacuous.
-    """
-    e1, e2 = E
-    vals = sorted(values, reverse=True)
+#     where values are sorted descending and r_(k) = -inf for k > len(values),
+#     with the convention r_(0) = +inf so lower bound e1=0 is vacuous.
+#     """
+#     e1, e2 = E
+#     vals = sorted(values, reverse=True)
 
-    def r(k: int) -> float:
-        if k == 0:
-            return float("inf")
-        if 1 <= k <= len(vals):
-            return float(vals[k - 1])
-        return float("-inf")
+#     def r(k: int) -> float:
+#         if k == 0:
+#             return float("inf")
+#         if 1 <= k <= len(vals):
+#             return float(vals[k - 1])
+#         return float("-inf")
 
-    upper = float("inf") if math.isinf(e2) else -r(int(e2) + 1)
-    return min(r(int(e1)), upper)
+#     upper = float("inf") if math.isinf(e2) else -r(int(e2) + 1)
+#     return min(r(int(e1)), upper)
 
 
 # ---------------------------------------------------------------------------
@@ -269,16 +238,13 @@ def main() -> float:
 
     phi_in, phi_out = build_example_specs(config)
     algebra = MinMaxAlgebra()
+    aggregator = "min_max"
 
     t = int(config.time_index)
     agent_id = int(config.agent_id)
 
-    # check correctness
-    print(positions[0])
-    print(graphs['dist'][0])
-
-    rob_in = eval_formula(trajs, graphs, phi_in, algebra, t=t, agent_id=agent_id)
-    rob_out = eval_formula(trajs, graphs, phi_out, algebra, t=t, agent_id=agent_id)
+    rob_in = evaluate(trajs, graphs, phi_in, algebra, t=t, agent_id=agent_id, aggregator=aggregator)
+    rob_out = evaluate(trajs, graphs, phi_out, algebra, t=t, agent_id=agent_id, aggregator=aggregator)
 
     print(f"Loaded positions shape: {positions.shape}")
     print(f"Agent: {agent_id}, time: {t}")

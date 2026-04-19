@@ -1,76 +1,3 @@
-# """
-# Evaluator: computes robustness of an STL-GO formula given a trajectory,
-# an algebra, an agent id, and a time index.
-
-# For now handles STL operators only (no graph operators yet).
-# Trajectory is assumed to be a list/array where traj[t] is the state at time t.
-# Time interval bounds in Until/F/G are treated as integer time steps.
-# """
-
-# from syntax import (
-#     Formula, TrueF, Predicate, Neg, And, Until, In, Out, AgentFormula
-# )
-# from algebra import Algebra
-
-
-# def evaluate(traj, formula: Formula, algebra: Algebra, t: int, agent_id: int = 0) -> float:
-#     """
-#     Recursively evaluate formula at time t for agent agent_id.
-#     Returns a scalar robustness value in the algebra's domain.
-#     """
-
-#     if isinstance(formula, TrueF):
-#         return algebra.top()
-
-#     elif isinstance(formula, Predicate):
-#         # μ(state) — state at time t for this agent
-#         return algebra.predicate(formula.mu(traj[t]))
-
-#     elif isinstance(formula, Neg):
-#         return algebra.neg_op(evaluate(traj, formula.child, algebra, t, agent_id))
-
-#     elif isinstance(formula, And):
-#         l = evaluate(traj, formula.left,  algebra, t, agent_id)
-#         r = evaluate(traj, formula.right, algebra, t, agent_id)
-#         return algebra.and_op(l, r)
-
-#     elif isinstance(formula, Until):
-#         return _eval_until(traj, formula, algebra, t, agent_id)
-
-#     elif isinstance(formula, (In, Out, AgentFormula)):
-#         raise NotImplementedError("Graph operators not yet implemented.")
-
-#     else:
-#         raise ValueError(f"Unknown formula node: {type(formula)}")
-
-
-# def _eval_until(traj, formula: Until, algebra: Algebra, t: int, agent_id: int) -> float:
-#     """
-#     φ1 U_[t1,t2] φ2 at time t:
-#       max over t' in [t+t1, t+t2] of:
-#         min( ρ(φ2, t'),  min over t'' in [t, t'] of ρ(φ1, t'') )
-#     """
-#     t1, t2 = int(formula.interval[0]), int(formula.interval[1])
-#     T = len(traj) - 1  # last valid index
-
-#     result = algebra.bot()
-
-#     for tp in range(t + t1, min(t + t2, T) + 1):
-#         # robustness of φ2 at t'
-#         rhs = evaluate(traj, formula.right, algebra, tp, agent_id)
-
-#         # robustness of φ1 over [t, t']
-#         lhs = algebra.top()
-#         for tpp in range(t, tp + 1):
-#             v = evaluate(traj, formula.left, algebra, tpp, agent_id)
-#             lhs = algebra.and_op(lhs, v)
-
-#         result = algebra.or_op(result, algebra.and_op(rhs, lhs))
-
-#     return result
-
-
-
 """
 Evaluator: computes robustness of an STL / STL-GO formula.
 
@@ -91,7 +18,7 @@ from aggregators import aggregate
 
 
 def evaluate(trajs, graphs, formula: Formula, algebra: Algebra,
-             t: int, agent_id: int = 0, aggregator: str = 'counting'):
+             t: int, agent_id: int = 0, aggregator: str = 'min_max'):
     """Recursively evaluate formula at time t for agent_id."""
 
     if isinstance(formula, TrueF):
@@ -151,28 +78,28 @@ def _eval_until(trajs, graphs, formula, algebra, t, agent_id, aggregator):
 # ---------------------------------------------------------------------------
 
 def _eval_graph_op(trajs, graphs, formula, algebra, t, agent_id, aggregator):
-    """
-    In/Out graph operator:
-      for each graph type: get neighbors, evaluate child for each, aggregate
-      then apply existential (or) or universal (and) over graph types
-    """
-    direction = 'in' if isinstance(formula, In) else 'out'
 
-    if formula.quantifier == 'exists':
-        q_init, q_op = algebra.bot(), algebra.or_op
-    else:
-        q_init, q_op = algebra.top(), algebra.and_op
+    # Undirected graph assumption: In and Out use the same neighbor set.
+    q_values = []
 
-    result = q_init
-    for gtype in formula.graph_types:
-        neighbors = get_neighbors(graphs, gtype, t, agent_id, formula.W, direction)
+    graph_types = list(formula.graph_types)
+    for gtype in graph_types:
+        neighbors = get_neighbors(
+            graphs=graphs,
+            graph_type=gtype,
+            t=t,
+            agent_id=agent_id,
+            W=formula.W,
+        )
+        values = [evaluate(trajs, graphs, formula.child, algebra, t, j) for j in neighbors]
 
-        neighbor_vals = [
-            evaluate(trajs, graphs, formula.child, algebra, t, j, aggregator)
-            for j in neighbors
-        ]
+        # Use min_max aggregation as requested.
+        q_values.append(aggregate(values, formula.E, aggregator))
 
-        agg = aggregate(neighbor_vals, formula.E, aggregator, bot=algebra.bot())
-        result = q_op(result, agg)
+    if formula.quantifier.lower() == "exists":
+        return max(q_values) if q_values else algebra.bot()
+    if formula.quantifier.lower() == "forall":
+        return min(q_values) if q_values else algebra.top()
+    raise ValueError(f"Unknown graph quantifier: {formula.quantifier}")
 
-    return result
+
