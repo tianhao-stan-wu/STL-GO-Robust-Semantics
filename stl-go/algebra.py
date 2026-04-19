@@ -12,12 +12,12 @@ class Algebra(ABC):
     """Abstract base: defines the interface for any STL-GO algebra."""
 
     @abstractmethod
-    def top(self) -> float:
+    def top(self):
         """Identity for ⊕ (or-like op), i.e. ⊤."""
         pass
 
     @abstractmethod
-    def bot(self) -> float:
+    def bot(self):
         """Identity for ⊗ (and-like op), i.e. ⊥."""
         pass
 
@@ -34,6 +34,11 @@ class Algebra(ABC):
     @abstractmethod
     def neg_op(self, a):
         """¬φ"""
+        pass
+
+    @abstractmethod
+    def predicate(self, v: float):
+        """Convert raw predicate value μ(x) ∈ R to the algebra's domain."""
         pass
 
 
@@ -57,3 +62,22 @@ class MinMaxAlgebra(Algebra):
 
     def neg_op(self, a):
         return -a
+
+    def predicate(self, v: float):
+        return v          # raw value is the robustness
+
+
+class BooleanAlgebra(Algebra):
+    """Classical Boolean satisfaction algebra."""
+
+    def top(self):          return True
+    def bot(self):          return False
+    def and_op(self, a, b): return a and b
+    def or_op(self,  a, b): return a or b
+    def neg_op(self, a):    return not a
+    def predicate(self, v: float):
+        return v >= 0     # threshold at 0
+
+
+
+
