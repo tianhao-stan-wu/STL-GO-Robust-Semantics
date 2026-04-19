@@ -23,9 +23,19 @@ from typing import Dict, List, Tuple
 import numpy as np
 
 from syntax import Predicate, In, Out, AgentFormula
-from algebra import MinMaxAlgebra
+from algebra import MinMaxAlgebra, BooleanAlgebra
 from graph_ops import get_neighbors
 from evaluator import evaluate
+
+
+algebras = {"minmax": MinMaxAlgebra(),
+            "bool": BooleanAlgebra()
+}
+
+aggregators = {"minmax": "minmax",
+                "count": "counting",
+                "avg": "averaging"
+}
 
 
 @dataclass
@@ -113,7 +123,7 @@ def build_example_specs(config: TestConfig):
 # Main
 # ---------------------------------------------------------------------------
 
-def main() -> float:
+def main():
     config = TestConfig()
     data = load_generated_data(config.data_path)
 
@@ -128,8 +138,8 @@ def main() -> float:
     }
 
     phi_in, phi_out = build_example_specs(config)
-    algebra = MinMaxAlgebra()
-    aggregator = "min_max"
+    algebra = algebras["minmax"]
+    aggregator = aggregators["avg"]
 
     t = int(config.time_index)
     agent_id = int(config.agent_id)
@@ -137,7 +147,6 @@ def main() -> float:
     rob_in = evaluate(trajs, graphs, phi_in, algebra, t=t, agent_id=agent_id, aggregator=aggregator)
     rob_out = evaluate(trajs, graphs, phi_out, algebra, t=t, agent_id=agent_id, aggregator=aggregator)
 
-    print(f"Loaded positions shape: {positions.shape}")
     print(f"Agent: {agent_id}, time: {t}")
     print(f"Graph type: {config.graph_type}")
     print(f"Weight interval W: {config.weight_interval}")
@@ -146,8 +155,8 @@ def main() -> float:
     print(f"In robustness : {rob_in}")
     print(f"Out robustness: {rob_out}")
 
-    return float(rob_in)
-
 
 if __name__ == "__main__":
     main()
+
+

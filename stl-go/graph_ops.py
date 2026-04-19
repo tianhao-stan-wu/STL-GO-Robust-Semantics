@@ -15,11 +15,10 @@ def get_neighbors(
     W: Tuple[float, float],
 ) -> List[int]:
     """
-    Return neighbors of agent_id at time t in an undirected graph.
+    Return neighbors of agent_id at time t in an undirected graph, 
+    if the weight falls in range W
 
-    The graph is represented as a dense matrix G[t, i, j].
-    For an undirected graph, we treat i--j as present if either orientation
-    carries a nonzero weight. The effective weight is the max of the two.
+    The graph is represented as a dense matrix G[t, i, j] of shape (T, N, N)
     """
     w_low, w_high = W
     mat = graphs[graph_type][t]
@@ -29,7 +28,8 @@ def get_neighbors(
     for j in range(n):
         if j == agent_id:
             continue
-        w = max(float(mat[agent_id, j]), float(mat[j, agent_id]))
+        w = float(mat[agent_id, j])
+        # w = 0 means there is no edge
         if w != 0.0 and (w_low <= w <= w_high):
             neighbors.append(j)
 

@@ -38,7 +38,7 @@ class TrueF(Formula):
 @dataclass
 class Predicate(Formula):
     """Atomic predicate: true iff μ(state) ≥ 0."""
-    mu: Callable        # μ: R^n → R  (agent-local) or R^{nN} → R (multi-agent)
+    mu: Callable        # μ: R^n → R  (agent-local)
     label: str = ""     # optional human-readable name
 
 
@@ -133,4 +133,10 @@ class AgentFormula(Formula):
     child: Formula          # must be an STL-GO-S formula
 
 
-    
+
+
+# TODO: multi-agent predicate function operator
+
+# TODO: EXV, FAV operators
+
+
