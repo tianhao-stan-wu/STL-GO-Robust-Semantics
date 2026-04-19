@@ -10,6 +10,7 @@ and returns a single scalar.
 import math
 
 
+# aggregation options for neightbor values
 def aggregate(values, E, method):
     """Dispatch to chosen aggregation method."""
     if not values:
@@ -73,6 +74,5 @@ def _counting(values, E):
 def _averaging(values):
     """Average robustness over all eligible neighbors."""
     return sum(values) / len(values)
-
 
 

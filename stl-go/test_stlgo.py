@@ -3,9 +3,7 @@ Simplest STL-GO test for generated 2D trajectories and graphs.
 
 What this script does:
   1. Loads the generated trajectory and graphs from a .npz file.
-  2. Evaluates one STL-GO specification with the In graph operator.
-  3. Evaluates the same specification with the Out graph operator.
-  4. Uses the min-max algebra and min_max graph aggregation.
+  2. Evaluates one STL-GO specifications
 
 Assumptions:
   - Graphs are undirected.
@@ -22,7 +20,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 
-from syntax import Predicate, In, Out, AgentFormula
+from syntax import Formula, TrueF, Predicate, MultiAgentPredicate, Neg, And, Until, In, Out, AgentFormula, EXV, FAV
 from algebra import MinMaxAlgebra, BooleanAlgebra
 from graph_ops import get_neighbors
 from evaluator import evaluate
@@ -32,9 +30,17 @@ algebras = {"minmax": MinMaxAlgebra(),
             "bool": BooleanAlgebra()
 }
 
-aggregators = {"minmax": "minmax",
-                "count": "counting",
-                "avg": "averaging"
+# ---------------------------------------------------------------------------
+# Atomic predicate
+# ---------------------------------------------------------------------------
+
+def y_nonneg(state: np.ndarray) -> float:
+    """Robustness of y >= 0."""
+    return float(state[1])
+
+
+ATOMIC_PREDICATES = {
+    "y_nonneg": y_nonneg,
 }
 
 
@@ -61,20 +67,6 @@ class TestConfig:
 
 
 # ---------------------------------------------------------------------------
-# Atomic predicate
-# ---------------------------------------------------------------------------
-
-def y_nonneg(state: np.ndarray) -> float:
-    """Robustness of y >= 0."""
-    return float(state[1])
-
-
-ATOMIC_PREDICATES = {
-    "y_nonneg": y_nonneg,
-}
-
-
-# ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
 
@@ -91,32 +83,22 @@ def load_generated_data(path: str) -> Dict[str, np.ndarray]:
 # Example specification
 # ---------------------------------------------------------------------------
 
-def build_example_specs(config: TestConfig):
-    pred = Predicate(mu=ATOMIC_PREDICATES[config.predicate_name], label=config.predicate_name)
+def build_In(predicate, agent_id, graph_type, weight_interval, count_interval, quantifier, aggregator):
+    pred = Predicate(mu=ATOMIC_PREDICATES[predicate], label=predicate)
 
     phi_in = AgentFormula(
-        agent_id=config.agent_id,
+        agent_id=agent_id,
         child=In(
-            graph_types=[config.graph_type],
-            W=config.weight_interval,
-            E=config.count_interval,
-            quantifier="exists",
+            graph_types=[graph_type],
+            W=weight_interval,
+            E=count_interval,
+            quantifier=quantifier,
+            aggregator=aggregator,
             child=pred,
         ),
     )
 
-    phi_out = AgentFormula(
-        agent_id=config.agent_id,
-        child=Out(
-            graph_types=[config.graph_type],
-            W=config.weight_interval,
-            E=config.count_interval,
-            quantifier="exists",
-            child=pred,
-        ),
-    )
-
-    return phi_in, phi_out
+    return phi_in
 
 
 # ---------------------------------------------------------------------------
@@ -124,8 +106,8 @@ def build_example_specs(config: TestConfig):
 # ---------------------------------------------------------------------------
 
 def main():
-    config = TestConfig()
-    data = load_generated_data(config.data_path)
+    data_path = "../trajectory_data/2D_graphs.npz"
+    data = load_generated_data(data_path)
 
     positions = data["positions"]  # (T, N, 2)
     T, N, _ = positions.shape
@@ -137,23 +119,27 @@ def main():
         "comm": data["G_comm"],
     }
 
-    phi_in, phi_out = build_example_specs(config)
+    # supported aggreator: "min_max", "counting", "averaging"
+    phi_in = In(
+        graph_types=["dist"],
+        W=[0.0, 5.0], 
+        E=[1, 4], 
+        quantifier="exists", 
+        aggregator="min_max",
+        child=Predicate(mu=ATOMIC_PREDICATES["y_nonneg"], label="y_nonneg"))
+
     algebra = algebras["minmax"]
-    aggregator = aggregators["avg"]
 
-    t = int(config.time_index)
-    agent_id = int(config.agent_id)
-
-    rob_in = evaluate(trajs, graphs, phi_in, algebra, t=t, agent_id=agent_id, aggregator=aggregator)
-    rob_out = evaluate(trajs, graphs, phi_out, algebra, t=t, agent_id=agent_id, aggregator=aggregator)
-
-    print(f"Agent: {agent_id}, time: {t}")
-    print(f"Graph type: {config.graph_type}")
-    print(f"Weight interval W: {config.weight_interval}")
-    print(f"Count interval E: {config.count_interval}")
-    print()
+    rob_in = evaluate(trajs, graphs, phi_in, algebra, t=0, agent_id=0)
     print(f"In robustness : {rob_in}")
-    print(f"Out robustness: {rob_out}")
+
+    phi_exv = EXV(child=phi_in)
+    rob_exv = evaluate(trajs, graphs, phi_exv, algebra, t=0, agent_id=0)
+    print(f"EXV In robustness : {rob_exv}")
+
+    phi_fav = FAV(child=phi_in)
+    rob_fav = evaluate(trajs, graphs, phi_fav, algebra, t=0, agent_id=0)
+    print(f"FAV In robustness : {rob_fav}")
 
 
 if __name__ == "__main__":

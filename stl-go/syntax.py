@@ -37,9 +37,21 @@ class TrueF(Formula):
 
 @dataclass
 class Predicate(Formula):
-    """Atomic predicate: true iff μ(state) ≥ 0."""
+    """single agent atomic predicate: true iff μ(state) ≥ 0."""
     mu: Callable        # μ: R^n → R  (agent-local)
     label: str = ""     # optional human-readable name
+
+
+@dataclass
+class MultiAgentPredicate(Formula):
+    """
+    Multi-agent atomic predicate.
+    μ : R^(n*N) -> R
+    true iff μ(X) >= 0
+    Here X is the joint system state across all agents.
+    """
+    mu: Callable
+    label: str = ""
 
 
 @dataclass
@@ -102,6 +114,7 @@ class In(Formula):
     W: Interval             # edge-weight interval [w1, w2]
     E: Interval             # count interval [e1, e2]
     quantifier: str         # "exists" or "forall" over graph_types
+    aggregator: str         # for neighbors values
     child: Formula
 
 
@@ -116,11 +129,12 @@ class Out(Formula):
     W: Interval
     E: Interval
     quantifier: str         # "exists" or "forall"
+    aggregator: str
     child: Formula
 
 
 # ---------------------------------------------------------------------------
-# STL-GO multi-agent operator
+# STL-GO multi-agent operatorc
 # ---------------------------------------------------------------------------
 
 @dataclass
@@ -133,10 +147,20 @@ class AgentFormula(Formula):
     child: Formula          # must be an STL-GO-S formula
 
 
+@dataclass
+class EXV(Formula):
+    """
+    EXV ϕ — existential quantification over agents.
+    """
+    child: Formula
 
 
-# TODO: multi-agent predicate function operator
+@dataclass
+class FAV(Formula):
+    """
+    FAV ϕ — universal quantification over agents.
+    """
+    child: Formula
 
-# TODO: EXV, FAV operators
 
 

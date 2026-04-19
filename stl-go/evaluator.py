@@ -11,14 +11,14 @@ Inputs:
   aggregator : 'min' | 'max' | 'counting' | 'averaging'  (for graph operators)
 """
 
-from syntax import Formula, TrueF, Predicate, Neg, And, Until, In, Out, AgentFormula
+from syntax import Formula, TrueF, Predicate, MultiAgentPredicate, Neg, And, Until, In, Out, AgentFormula, EXV, FAV
 from algebra import Algebra
 from graph_ops import get_neighbors
 from aggregators import aggregate
 
 
 def evaluate(trajs, graphs, formula: Formula, algebra: Algebra,
-             t: int, agent_id: int = 0, aggregator: str = 'min_max'):
+             t: int, agent_id: int):
     """Recursively evaluate formula at time t for agent_id."""
 
     if isinstance(formula, TrueF):
@@ -27,24 +27,34 @@ def evaluate(trajs, graphs, formula: Formula, algebra: Algebra,
     elif isinstance(formula, Predicate):
         return algebra.predicate(formula.mu(trajs[agent_id][t]))
 
+    elif isinstance(formula, MultiAgentPredicate):
+        X_t = np.array([trajs[j][t] for j in trajs])
+        return algebra.predicate(formula.mu(X_t))
+
     elif isinstance(formula, Neg):
         return algebra.neg_op(
-            evaluate(trajs, graphs, formula.child, algebra, t, agent_id, aggregator))
+            evaluate(trajs, graphs, formula.child, algebra, t, agent_id))
 
     elif isinstance(formula, And):
-        l = evaluate(trajs, graphs, formula.left,  algebra, t, agent_id, aggregator)
-        r = evaluate(trajs, graphs, formula.right, algebra, t, agent_id, aggregator)
+        l = evaluate(trajs, graphs, formula.left,  algebra, t, agent_id)
+        r = evaluate(trajs, graphs, formula.right, algebra, t, agent_id)
         return algebra.and_op(l, r)
 
     elif isinstance(formula, Until):
-        return _eval_until(trajs, graphs, formula, algebra, t, agent_id, aggregator)
+        return _eval_until(trajs, graphs, formula, algebra, t, agent_id)
 
     elif isinstance(formula, (In, Out)):
-        return _eval_graph_op(trajs, graphs, formula, algebra, t, agent_id, aggregator)
+        return _eval_graph_op(trajs, graphs, formula, algebra, t, agent_id)
 
     elif isinstance(formula, AgentFormula):
-        return evaluate(trajs, graphs, formula.child, algebra, t, formula.agent_id, aggregator)
+        return evaluate(trajs, graphs, formula.child, algebra, t, formula.agent_id)
 
+    elif isinstance(formula, EXV):
+        return _eval_existential(trajs, graphs, formula, algebra, t)
+
+    elif isinstance(formula, FAV):
+        return _eval_universal(trajs, graphs, formula, algebra, t)
+        
     else:
         raise ValueError(f"Unknown formula node: {type(formula)}")
 
@@ -53,7 +63,7 @@ def evaluate(trajs, graphs, formula: Formula, algebra: Algebra,
 # Temporal
 # ---------------------------------------------------------------------------
 
-def _eval_until(trajs, graphs, formula, algebra, t, agent_id, aggregator):
+def _eval_until(trajs, graphs, formula, algebra, t, agent_id):
     """
     φ1 U_[t1,t2] φ2 :
       or  over t' in [t+t1, t+t2] of:
@@ -64,10 +74,10 @@ def _eval_until(trajs, graphs, formula, algebra, t, agent_id, aggregator):
 
     result = algebra.bot()
     for tp in range(t + t1, min(t + t2, T) + 1):
-        rhs = evaluate(trajs, graphs, formula.right, algebra, tp, agent_id, aggregator)
+        rhs = evaluate(trajs, graphs, formula.right, algebra, tp, agent_id)
         lhs = algebra.top()
         for tpp in range(t, tp + 1):
-            v = evaluate(trajs, graphs, formula.left, algebra, tpp, agent_id, aggregator)
+            v = evaluate(trajs, graphs, formula.left, algebra, tpp, agent_id)
             lhs = algebra.and_op(lhs, v)
         result = algebra.or_op(result, algebra.and_op(rhs, lhs))
     return result
@@ -77,7 +87,10 @@ def _eval_until(trajs, graphs, formula, algebra, t, agent_id, aggregator):
 # Graph operators
 # ---------------------------------------------------------------------------
 
-def _eval_graph_op(trajs, graphs, formula, algebra, t, agent_id, aggregator):
+# use min-max aggregation for the operators below, 
+# but can easily extend to any aggregator by adding an aggregator in formula syntax
+# and define the corresponding aggregator in aggregators.py
+def _eval_graph_op(trajs, graphs, formula, algebra, t, agent_id):
 
     # Undirected graph assumption: In and Out use the same neighbor set.
     q_values = []
@@ -93,13 +106,37 @@ def _eval_graph_op(trajs, graphs, formula, algebra, t, agent_id, aggregator):
         )
         values = [evaluate(trajs, graphs, formula.child, algebra, t, j) for j in neighbors]
 
-        # Use min_max aggregation as requested.
-        q_values.append(aggregate(values, formula.E, aggregator))
+        q_values.append(aggregate(values, formula.E, formula.aggregator))
 
+    # here we use min-max aggregation for graph quantifier
     if formula.quantifier.lower() == "exists":
         return max(q_values) if q_values else algebra.bot()
     if formula.quantifier.lower() == "forall":
         return min(q_values) if q_values else algebra.top()
     raise ValueError(f"Unknown graph quantifier: {formula.quantifier}")
+
+
+def _eval_existential(trajs, graphs, formula, algebra, t):
+
+    # existential quantification over agents
+    vals = [
+        evaluate(trajs, graphs, formula.child, algebra, t, j)
+        for j in sorted(trajs.keys())
+    ]
+    # assume min-max aggregation
+    return max(vals)
+
+
+def _eval_universal(trajs, graphs, formula, algebra, t):
+    
+    # universal quantification over agents
+    vals = [
+        evaluate(trajs, graphs, formula.child, algebra, t, j)
+        for j in sorted(trajs.keys())
+    ]
+    
+    # assume min-max aggregation
+    return min(vals)
+
 
 
