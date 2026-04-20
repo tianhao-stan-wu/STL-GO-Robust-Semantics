@@ -19,7 +19,12 @@ from syntax import Formula, Predicate, AgentFormula, In, Out
 spec_path = Path(__file__).parent / "specifications"
 sys.path.insert(0, str(spec_path))
 
-from specifications.spec1 import build_spec
+
+def load_spec_module(spec_name: str):
+    """Dynamically load the specification module."""
+    spec_module = __import__(spec_name)
+    return spec_module.build_spec
+
 
 # ---------------------------------------------------------------------------
 # Data loading
@@ -108,27 +113,48 @@ algebras = {"minmax": MinMaxAlgebra(),
 aggregators = {"minmax": "min_max",
                 "count": "counting",
                 "avg": "averaging",
-                "hybrid": "hybrid",
-                "bool": "boolean"
+                "hybrid" : "hybrid",
+                "bool": "bool"
 }
 
 
 if __name__ == "__main__":
+
     data_path = Path("trajectory_data/2D_data/")
-    
-    algebra = algebras["minmax"]
-    aggregator = aggregators["minmax"]
-    agent_id: int = 25
+
+    algebra = algebras["bool"]
+    aggregator = aggregators["bool"]
+    agent_id: int = -1 #25
     time_index: int = 0
-    
+
     results = []
+
+    # Load spec
+    spec_name = "recursive_in"  # Change to: "recursive_in", "recursive_out_in"
+    iteration_level = 1  # For specs that support iteration
+
+
+    print("\n" + "="*60)
+    print("EXPERIMENT SUMMARY")
+    print("="*60)
+    print(f"Data path: {data_path}")
+    # print(f"Agent ID: {agent_id}")
+    # print(f"Time index: {time_index}")
+    print(f"Algebra: {algebra}")
+    print(f"Aggregator: {aggregator}")
+    print(f"Specification: {spec_name}")
+    print(f"Iteration_level: {iteration_level}")
+
+
+    # Load the selected spec
+    build_spec = load_spec_module(spec_name)
 
     # Load data
     if not data_path.exists():
         raise FileNotFoundError(f"Data path not found: {data_path}")
 
     data_dirs = sorted([d for d in data_path.iterdir() if d.is_dir() and d.name.startswith("data_")])
-    
+
     start_time = time.time()
     for data_dir in data_dirs:
         traj_path: str = str(data_dir / "trajectory.npz")
@@ -145,11 +171,19 @@ if __name__ == "__main__":
         }
 
         # Build spec and evaluate robustness
-        phi = build_spec(agent_id)
-        
+        # try:
+        phi = build_spec(agent_id, iteration_level=iteration_level)
+        # except TypeError:
+        #     # Spec doesn't support iteration_level parameter
+        #     phi = build_spec(agent_id)
 
+        if data_dir == data_dirs[0]:
+            print(f"\nSpecification: {phi}\n")
+
+        computation_start = time.time()
         robustness = compute_robustness(trajectories, graphs, phi, agent_id, time_index, algebra, aggregator=aggregator)
-        results.append({"data_dir": data_dir.name, "robustness": robustness})
+        computation_time = time.time() - computation_start
+        results.append({"data_dir": data_dir.name, "robustness": robustness, "computation_time": computation_time})
 
     end_time = time.time()
     elapsed_time = end_time - start_time
@@ -175,7 +209,9 @@ if __name__ == "__main__":
     print("\n" + "="*60)
     print("COMPUTATION TIME")
     print("="*60)
-    print(f"Elapsed time: {elapsed_time:.2f} seconds")
+    robustness_time = sum(r.get('computation_time', 0) for r in results)
+    print(f"Total robustness computation time: {robustness_time:.2f} seconds")
+    print(f"Total elapsed time (including data loading): {elapsed_time:.2f} seconds")
 
     print("\n" + "="*60)
     print("EXPERIMENT SUMMARY")
