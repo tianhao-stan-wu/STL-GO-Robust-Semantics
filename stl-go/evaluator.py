@@ -18,7 +18,7 @@ from aggregators import aggregate
 
 
 def evaluate(trajs, graphs, formula: Formula, algebra: Algebra,
-             t: int, agent_id: int):
+             t: int, agent_id: int, aggregator: str):
     """Recursively evaluate formula at time t for agent_id."""
 
     if isinstance(formula, TrueF):
@@ -33,27 +33,27 @@ def evaluate(trajs, graphs, formula: Formula, algebra: Algebra,
 
     elif isinstance(formula, Neg):
         return algebra.neg_op(
-            evaluate(trajs, graphs, formula.child, algebra, t, agent_id))
+            evaluate(trajs, graphs, formula.child, algebra, t, agent_id, aggregator))
 
     elif isinstance(formula, And):
-        l = evaluate(trajs, graphs, formula.left,  algebra, t, agent_id)
-        r = evaluate(trajs, graphs, formula.right, algebra, t, agent_id)
+        l = evaluate(trajs, graphs, formula.left,  algebra, t, agent_id, aggregator)
+        r = evaluate(trajs, graphs, formula.right, algebra, t, agent_id, aggregator)
         return algebra.and_op(l, r)
 
     elif isinstance(formula, Until):
-        return _eval_until(trajs, graphs, formula, algebra, t, agent_id)
+        return _eval_until(trajs, graphs, formula, algebra, t, agent_id, aggregator)
 
     elif isinstance(formula, (In, Out)):
-        return _eval_graph_op(trajs, graphs, formula, algebra, t, agent_id)
+        return _eval_graph_op(trajs, graphs, formula, algebra, t, agent_id, aggregator)
 
     elif isinstance(formula, AgentFormula):
-        return evaluate(trajs, graphs, formula.child, algebra, t, formula.agent_id)
+        return evaluate(trajs, graphs, formula.child, algebra, t, formula.agent_id, aggregator)
 
     elif isinstance(formula, EXV):
-        return _eval_existential(trajs, graphs, formula, algebra, t)
+        return _eval_existential(trajs, graphs, formula, algebra, t, aggregator)
 
     elif isinstance(formula, FAV):
-        return _eval_universal(trajs, graphs, formula, algebra, t)
+        return _eval_universal(trajs, graphs, formula, algebra, t, aggregator)
         
     else:
         raise ValueError(f"Unknown formula node: {type(formula)}")
@@ -63,7 +63,7 @@ def evaluate(trajs, graphs, formula: Formula, algebra: Algebra,
 # Temporal
 # ---------------------------------------------------------------------------
 
-def _eval_until(trajs, graphs, formula, algebra, t, agent_id):
+def _eval_until(trajs, graphs, formula, algebra, t, agent_id, aggregator):
     """
     φ1 U_[t1,t2] φ2 :
       or  over t' in [t+t1, t+t2] of:
@@ -74,10 +74,10 @@ def _eval_until(trajs, graphs, formula, algebra, t, agent_id):
 
     result = algebra.bot()
     for tp in range(t + t1, min(t + t2, T) + 1):
-        rhs = evaluate(trajs, graphs, formula.right, algebra, tp, agent_id)
+        rhs = evaluate(trajs, graphs, formula.right, algebra, tp, agent_id, aggregator)
         lhs = algebra.top()
         for tpp in range(t, tp + 1):
-            v = evaluate(trajs, graphs, formula.left, algebra, tpp, agent_id)
+            v = evaluate(trajs, graphs, formula.left, algebra, tpp, agent_id, aggregator)
             lhs = algebra.and_op(lhs, v)
         result = algebra.or_op(result, algebra.and_op(rhs, lhs))
     return result
@@ -90,7 +90,7 @@ def _eval_until(trajs, graphs, formula, algebra, t, agent_id):
 # use min-max aggregation for the operators below, 
 # but can easily extend to any aggregator by adding an aggregator in formula syntax
 # and define the corresponding aggregator in aggregators.py
-def _eval_graph_op(trajs, graphs, formula, algebra, t, agent_id):
+def _eval_graph_op(trajs, graphs, formula, algebra, t, agent_id, aggregator):
 
     # Undirected graph assumption: In and Out use the same neighbor set.
     q_values = []
@@ -104,9 +104,9 @@ def _eval_graph_op(trajs, graphs, formula, algebra, t, agent_id):
             agent_id=agent_id,
             W=formula.W,
         )
-        values = [evaluate(trajs, graphs, formula.child, algebra, t, j) for j in neighbors]
+        values = [evaluate(trajs, graphs, formula.child, algebra, t, j, aggregator) for j in neighbors]
 
-        q_values.append(aggregate(values, formula.E, formula.aggregator))
+        q_values.append(aggregate(values, formula.E, aggregator))
 
     # here we use min-max aggregation for graph quantifier
     if formula.quantifier.lower() == "exists":
@@ -116,22 +116,22 @@ def _eval_graph_op(trajs, graphs, formula, algebra, t, agent_id):
     raise ValueError(f"Unknown graph quantifier: {formula.quantifier}")
 
 
-def _eval_existential(trajs, graphs, formula, algebra, t):
+def _eval_existential(trajs, graphs, formula, algebra, t, aggregator):
 
     # existential quantification over agents
     vals = [
-        evaluate(trajs, graphs, formula.child, algebra, t, j)
+        evaluate(trajs, graphs, formula.child, algebra, t, j, aggregator)
         for j in sorted(trajs.keys())
     ]
     # assume min-max aggregation
     return max(vals)
 
 
-def _eval_universal(trajs, graphs, formula, algebra, t):
+def _eval_universal(trajs, graphs, formula, algebra, t, aggregator):
     
     # universal quantification over agents
     vals = [
-        evaluate(trajs, graphs, formula.child, algebra, t, j)
+        evaluate(trajs, graphs, formula.child, algebra, t, j, aggregator)
         for j in sorted(trajs.keys())
     ]
     

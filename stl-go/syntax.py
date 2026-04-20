@@ -114,7 +114,7 @@ class In(Formula):
     W: Interval             # edge-weight interval [w1, w2]
     E: Interval             # count interval [e1, e2]
     quantifier: str         # "exists" or "forall" over graph_types
-    aggregator: str         # for neighbors values
+    # aggregator: str         # for neighbors values
     child: Formula
 
 
@@ -129,7 +129,7 @@ class Out(Formula):
     W: Interval
     E: Interval
     quantifier: str         # "exists" or "forall"
-    aggregator: str
+    # aggregator: str
     child: Formula
 
 
