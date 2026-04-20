@@ -17,37 +17,34 @@ import matplotlib.pyplot as plt
 logger = logging.getLogger(__name__)
 
 
-
-
 @dataclass
-class SphereAgentConfig:
-    """Configuration for agents on a sphere."""
-    num_agents: int = 10
-    sphere_radius: float = 10.0
+class SimulationConfig3D:
+    """Configuration for trajectory and graphs generation"""
+    num_sphere_agents: int = 10
+    num_free_agents: int = 5
     time_horizon: int = 50
+
+
+    sphere_radius: float = 10.0
     angle_change_range: Tuple[float, float] = (-np.pi / 8, np.pi / 8)
+    
+
+    free_space_lower_bound: float = 20.0
+    free_space_bound: float = 30.0
+    free_max_angle_change: float = np.pi/10 #np.pi / 100
+    free_max_radius_change: float = 0.5 #0.1
+
     random_seed: int = 300
     save_path: str = "trajectory_data/sphere_trajectories.npz"
-
-
-@dataclass
-class FreeAgentConfig:
-    """Configuration for free agents in 3D space."""
-    num_agents: int = 5
-    space_bound: float = 20.0
-    max_angle_change: float = np.pi / 100
-    max_radius_change: float = 0.1
-    time_horizon: int = 50
-    random_seed: int = 300
 
 
 def rand_sample_unit_sphere(n: int) -> np.ndarray:
     """Generate N random unit vectors on a sphere.
 
-    returns: shape (3, N) array of unit vectors
+    returns: shape (N, 3) array of unit vectors
     """
-    X = np.random.randn(3, n)
-    X = X / np.linalg.norm(X, axis=0)
+    X = np.random.randn(n, 3)
+    X = X / np.linalg.norm(X, axis=1, keepdims=True)
     return X
 
 
@@ -73,34 +70,35 @@ def sph2cart(phi: np.ndarray, theta: np.ndarray, r: np.ndarray) -> Tuple[np.ndar
     return x, y, z
 
 
-def simulate_sphere_agents(config: SphereAgentConfig) -> np.ndarray:
+def simulate_sphere_agents(config: SimulationConfig3D) -> np.ndarray:
     """Simulate agents constrained to move on a sphere surface.
 
     returns: trajectories shape (T+1, N, 3) - (time, agents, dimensions)
     """
+    
     np.random.seed(config.random_seed)
 
     # Initialize positions on sphere
-    init_positions = config.sphere_radius * rand_sample_unit_sphere(config.num_agents)
+    init_positions = config.sphere_radius * rand_sample_unit_sphere(config.num_sphere_agents)
 
     # Convert to spherical angles
-    phis, thetas, _ = cart2sph(init_positions[0, :], init_positions[1, :], init_positions[2, :])
-    polar_trajectories = np.zeros((config.time_horizon + 1, config.num_agents, 2))
+    phis, thetas, _ = cart2sph(init_positions[:, 0], init_positions[:, 1], init_positions[:, 2])
+    polar_trajectories = np.zeros((config.time_horizon + 1, config.num_sphere_agents, 2))
     polar_trajectories[0, :, 0] = thetas
     polar_trajectories[0, :, 1] = phis
 
     # Simulate random walk in angles
     angle_min, angle_max = config.angle_change_range
     for tt in range(1, config.time_horizon + 1):
-        dthetas = angle_min + (angle_max - angle_min) * np.random.rand(config.num_agents)
-        dphis = angle_min + (angle_max - angle_min) * np.random.rand(config.num_agents)
+        dthetas = angle_min + (angle_max - angle_min) * np.random.rand(config.num_sphere_agents)
+        dphis = angle_min + (angle_max - angle_min) * np.random.rand(config.num_sphere_agents)
 
         old_angles = polar_trajectories[tt - 1, :, :]
         new_angles = old_angles + np.column_stack((dthetas, dphis))
         polar_trajectories[tt, :, :] = new_angles
 
     # Convert back to Cartesian
-    trajectories = np.zeros((config.time_horizon + 1, config.num_agents, 3))
+    trajectories = np.zeros((config.time_horizon + 1, config.num_sphere_agents, 3))
     for tt in range(config.time_horizon + 1):
         thetas = polar_trajectories[tt, :, 0]
         phis = polar_trajectories[tt, :, 1]
@@ -112,17 +110,19 @@ def simulate_sphere_agents(config: SphereAgentConfig) -> np.ndarray:
     return trajectories
 
 
-def simulate_free_agents(config: FreeAgentConfig) -> np.ndarray:
+def simulate_free_agents(config: SimulationConfig3D) -> np.ndarray:
     """Simulate free agents moving in 3D space with constrained radius changes.
 
     returns: trajectories shape (T+1, N, 3) - (time, agents, dimensions)
     """
     np.random.seed(config.random_seed)
 
-    # Initialize positions in bounded space
-    init_positions = config.space_bound * rand_sample_unit_sphere(config.num_agents)
-    trajectories = np.zeros((config.time_horizon + 1, config.num_agents, 3))
-    trajectories[0, :, :] = init_positions.T
+    # Initialize positions in bounded space with radius in [lower_bound, bound]
+    unit_vectors = rand_sample_unit_sphere(config.num_free_agents)
+    random_radii = np.random.uniform(config.free_space_lower_bound, config.free_space_bound, config.num_free_agents)
+    init_positions = unit_vectors * random_radii[:, np.newaxis]
+    trajectories = np.zeros((config.time_horizon + 1, config.num_free_agents, 3))
+    trajectories[0, :, :] = init_positions
 
     # Simulate with constrained radius changes
     for tt in range(1, config.time_horizon + 1):
@@ -130,15 +130,15 @@ def simulate_free_agents(config: FreeAgentConfig) -> np.ndarray:
         phis, thetas, rs = cart2sph(old_pos[:, 0], old_pos[:, 1], old_pos[:, 2])
 
         # Random angle changes
-        dphis = -config.max_angle_change + 2 * config.max_angle_change * np.random.rand(config.num_agents)
-        dthetas = -config.max_angle_change + 2 * config.max_angle_change * np.random.rand(config.num_agents)
+        dphis = -config.free_max_angle_change + 2 * config.free_max_angle_change * np.random.rand(config.num_free_agents)
+        dthetas = -config.free_max_angle_change + 2 * config.free_max_angle_change * np.random.rand(config.num_free_agents)
 
         # Random radius changes
-        drs = -config.max_radius_change + 2 * config.max_radius_change * np.random.rand(config.num_agents)
+        drs = -config.free_max_radius_change + 2 * config.free_max_radius_change * np.random.rand(config.num_free_agents)
 
         new_phis = phis + dphis
         new_thetas = thetas + dthetas
-        new_rs = rs + drs
+        new_rs = np.clip(rs + drs, config.free_space_lower_bound, config.free_space_bound)
 
         x, y, z = sph2cart(new_phis, new_thetas, new_rs)
         trajectories[tt, :, 0] = x
@@ -219,20 +219,21 @@ def save_results(sphere_traj: np.ndarray, free_traj: np.ndarray, filepath: str) 
 def main() -> None:
     logger.info("Starting 3D trajectory simulation")
 
-    sphere_config = SphereAgentConfig()
-    free_config = FreeAgentConfig()
+    simconfig = SimulationConfig3D()
+    # sphere_config = SphereAgentConfig()
+    # free_config = FreeAgentConfig()
 
-    logger.info(f"Simulating {sphere_config.num_agents} agents on sphere")
-    sphere_trajectories = simulate_sphere_agents(sphere_config)
+    logger.info(f"Simulating {simconfig.num_sphere_agents} agents on sphere")
+    sphere_trajectories = simulate_sphere_agents(simconfig)
 
-    logger.info(f"Simulating {free_config.num_agents} free agents in 3D")
-    free_trajectories = simulate_free_agents(free_config)
+    logger.info(f"Simulating {simconfig.num_free_agents} free agents in 3D")
+    free_trajectories = simulate_free_agents(simconfig)
 
     # Save results
-    save_results(sphere_trajectories, free_trajectories, sphere_config.save_path)
+    save_results(sphere_trajectories, free_trajectories, simconfig.save_path)
 
     # Plot results
-    plot_3d_trajectories(sphere_trajectories, free_trajectories, sphere_config.sphere_radius)
+    plot_3d_trajectories(sphere_trajectories, free_trajectories, simconfig.sphere_radius)
 
     logger.info("Simulation complete")
 

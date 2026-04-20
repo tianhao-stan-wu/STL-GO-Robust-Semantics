@@ -1,103 +1,110 @@
 #!/usr/bin/env python3
 """
-Generate distance, sensing, and communication graphs from saved 2D trajectories.
+Generate distance, sensing, and communication graphs from 2D trajectory data with orientation.
+
+This module processes agent trajectories (position + orientation) and generates three types of
+multi-agent interaction graphs at each timestep:
+
+Graph types:
+  - Distance graph (G_dist): Weighted adjacency matrix with Euclidean distances (x,y only)
+  - Sensing graph (G_sense): Binary adjacency with distance AND field-of-view constraints
+  - Communication graph (G_comm): Binary adjacency with distance threshold only
 
 Expected input:
-  - A .npz file containing an array named `trajectories` with shape (T, N, 2)
+  - trajectories array with shape (T, N, 3) where:
+      T = timesteps
+      N = number of agents
+      3 = [x, y, theta] state
 
-Output:
-  - A .npz file containing:
-      positions[t]
-      dist_matrix[t]
-      G_dist[t]
-      G_sense[t]
-      G_comm[t]
+Output files (.npz format) contain:
+  - G_dist: (T, N, N) weighted distance graphs
+  - G_sense: (T, N, N) binary sensing graphs (with FOV)
+  - G_comm: (T, N, N) binary communication graphs
 
-Graph conventions:
-  - Distance graph: weighted adjacency matrix. Entry (i, j) is the Euclidean
-    distance if i != j, else 0.0.
-  - Sensing graph: unweighted adjacency matrix with 1 if distance <= threshold.
-  - Communication graph: unweighted adjacency matrix with 1 if distance <= threshold.
-
-This script only generates the graphs. It does not define STL-GO formulas or
-perform robustness monitoring.
+Note: This module only generates graphs. It does not evaluate STL-GO formulas or
+compute robustness metrics.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 import os
-from typing import Dict
+from typing import Dict, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
 
 
-@dataclass
-class GraphConfig:
-    """Configuration for graph generation from a single 2D trajectory."""
-    input_path: str = "trajectory_data/2D_trajectories.npz"
-    output_path: str = "trajectory_data/2D_graphs.npz"
-    trajectory_key: str = "trajectories"
-    trajectory_index: int = 0
-    sensing_threshold: float = 5.0
-    communication_threshold: float = 7.0
-
-
-def load_trajectory(config: GraphConfig) -> np.ndarray:
-    """
-    Load trajectories from a .npz file and select one trajectory.
-
-    Assumes the saved array shape is fixed:
-      - (T, N, 2) for a single trajectory
-      - (M, T, N, 2) for a batch of trajectories
-    """
-    data = np.load(config.input_path, allow_pickle=False)
-    trajectories = data[config.trajectory_key]
-
-    if trajectories.ndim == 3:
-        return trajectories
-
-    return trajectories[config.trajectory_index]
-
-
 def pairwise_distance_matrix(positions: np.ndarray) -> np.ndarray:
     """
-    Compute the full pairwise Euclidean distance matrix.
+    Compute the full pairwise Euclidean distance matrix (using x,y only).
 
-    positions: shape (N, 2)
+    positions: shape (N, 3) with [x, y, theta]
     returns:   shape (N, N)
     """
-    diff = positions[:, None, :] - positions[None, :, :]
+    xy_positions = positions[:, :2]
+    diff = xy_positions[:, None, :] - xy_positions[None, :, :]
     return np.linalg.norm(diff, axis=-1)
 
 
-def weighted_distance_graph(dist_matrix: np.ndarray) -> np.ndarray:
+def build_communication_graph(dist_matrix: np.ndarray, threshold: float) -> np.ndarray:
     """
-    Distance graph as a weighted adjacency matrix:
-      - off-diagonal entry (i, j) = Euclidean distance
-      - diagonal = 0.0
-    """
-    g = dist_matrix.copy()
-    np.fill_diagonal(g, 0.0)
-    return g
+    Create binary communication graph based on distance threshold.
 
+    Args:
+        dist_matrix: shape (N, N) pairwise distance matrix
+        threshold: distance threshold for connectivity
 
-def threshold_graph(dist_matrix: np.ndarray, threshold: float) -> np.ndarray:
-    """
-    Build an unweighted adjacency matrix:
-      edge (i, j) exists iff i != j and dist(i, j) <= threshold
+    Returns:
+        shape (N, N) binary adjacency matrix (1 if distance <= threshold)
     """
     adj = (dist_matrix <= threshold).astype(np.int8)
     np.fill_diagonal(adj, 0)
     return adj
 
-def build_sensing_graph(dist_matrix: np.ndarray, threshold: float) -> np.ndarray:
+def build_sensing_graph(positions: np.ndarray, dist_matrix: np.ndarray, threshold: float, fov_angle: float) -> np.ndarray:
     """
-    Build an unweighted adjacency matrix:
-      edge (i, j) exists iff i != j and dist(i, j) <= threshold
+    Create binary sensing graph with distance and field-of-view constraints.
+
+    Edge (i, j) exists iff:
+      - dist(i, j) <= threshold AND
+      - agent j is within agent i's field of view
+
+    Args:
+        positions: shape (N, 3) with [x, y, theta]
+        dist_matrix: shape (N, N) pairwise distances
+        threshold: distance threshold for sensing
+        fov_angle: field of view half-angle in radians
+
+    Returns:
+        shape (N, N) binary adjacency matrix
     """
-    adj = (dist_matrix <= threshold).astype(np.int8)
-    np.fill_diagonal(adj, 0)
+    N = positions.shape[0]
+    adj = np.zeros((N, N), dtype=np.int8)
+
+    for i in range(N):
+        for j in range(N):
+            if i == j:
+                continue
+
+            if dist_matrix[i, j] > threshold:
+                continue
+
+            # Get agent i's orientation and position
+            theta_i = positions[i, 2]
+            x_i, y_i = positions[i, 0], positions[i, 1]
+            x_j, y_j = positions[j, 0], positions[j, 1]
+
+            # Compute angle from i to j
+            angle_to_j = np.arctan2(y_j - y_i, x_j - x_i)
+
+            # Compute angular difference (handle wrapping)
+            angle_diff = angle_to_j - theta_i
+            angle_diff = np.arctan2(np.sin(angle_diff), np.cos(angle_diff))
+
+            # Check if j is within agent i's field of view
+            if abs(angle_diff) <= fov_angle:
+                adj[i, j] = 1
+
     return adj
 
 
@@ -105,37 +112,41 @@ def generate_graphs_for_trajectory(
     trajectory: np.ndarray,
     sensing_threshold: float,
     communication_threshold: float,
+    fov_angle: float,
 ) -> Dict[str, np.ndarray]:
     """
-    Generate graphs for each time step.
+    Generate distance, sensing, and communication graphs for all time steps.
 
-    trajectory: shape (T, N, 2)
-    returns:
-      positions:   (T, N, 2)
-      dist_matrix:  (T, N, N)
-      G_dist:      (T, N, N)
-      G_sense:     (T, N, N)
-      G_comm:      (T, N, N)
+    Args:
+        trajectory: shape (T, N, 3) with [x, y, theta]
+        sensing_threshold: distance threshold for sensing graph
+        communication_threshold: distance threshold for communication graph
+        fov_angle: field of view half-angle in radians for sensing graph
+
+    Returns:
+        Dictionary with keys:
+            - G_dist: (T, N, N) weighted distance graphs
+            - G_sense: (T, N, N) binary sensing graphs (with FOV)
+            - G_comm: (T, N, N) binary communication graphs
     """
-    T, N, _ = trajectory.shape
+    if trajectory.ndim != 3 or trajectory.shape[2] != 3:
+        raise ValueError(f"Expected trajectory shape (T, N, 3) with [x, y, theta], got {trajectory.shape}")
 
-    dist_matrices = np.zeros((T, N, N), dtype=float)
-    g_dist = np.zeros((T, N, N), dtype=float)
-    g_sense = np.zeros((T, N, N), dtype=np.int8)
-    g_comm = np.zeros((T, N, N), dtype=np.int8)
+    Tplus1, N, _ = trajectory.shape
 
-    for t in range(T):
+    g_dist = np.zeros((Tplus1, N, N), dtype=float)
+    g_sense = np.zeros((Tplus1, N, N), dtype=np.int8)
+    g_comm = np.zeros((Tplus1, N, N), dtype=np.int8)
+
+    for t in range(Tplus1):
         positions_t = trajectory[t]
         dist_t = pairwise_distance_matrix(positions_t)
 
-        dist_matrices[t] = dist_t
-        g_dist[t] = weighted_distance_graph(dist_t)
-        g_sense[t] = threshold_graph(dist_t, sensing_threshold)
-        g_comm[t] = threshold_graph(dist_t, communication_threshold)
+        g_dist[t] = dist_t
+        g_sense[t] = build_sensing_graph(positions_t, dist_t, sensing_threshold, fov_angle)
+        g_comm[t] = build_communication_graph(dist_t, communication_threshold)
 
     return {
-        "positions": trajectory,
-        "dist_matrix": dist_matrices,
         "G_dist": g_dist,
         "G_sense": g_sense,
         "G_comm": g_comm,
@@ -143,23 +154,39 @@ def generate_graphs_for_trajectory(
 
 
 def save_graphs(output_path: str, graphs: Dict[str, np.ndarray]) -> None:
-    """Save graph arrays to a compressed .npz file."""
+    """
+    Save graph data to compressed .npz file.
+
+    Args:
+        output_path: path to save the .npz file
+        graphs: dictionary of graph arrays to save
+    """
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     np.savez_compressed(output_path, **graphs)
 
 
-def plot_graph_over_time(positions, graph_sequence, title_prefix, weighted=False):
+def plot_graph_over_time(
+    positions: np.ndarray,
+    graph_sequence: np.ndarray,
+    title_prefix: str,
+    weighted: bool,
+    bounds: Tuple[float, float, float, float],
+) -> None:
     """
-    Plot a graph sequence over time with consistent colors per agent.
+    Visualize graph sequence over time with consistent agent colors.
 
-    positions: (T, N, 2)
-    graph_sequence: (T, N, N)
-    weighted: if True, draw edges for distance graph
+    Args:
+        positions: shape (T, N, 3) with [x, y, theta]
+        graph_sequence: shape (T, N, N) adjacency matrices
+        title_prefix: title for plot frames
+        weighted: if True, draw weighted edges; if False, draw binary edges
+        bounds: tuple (x_min, x_max, y_min, y_max) for plot limits
     """
     T, N, _ = positions.shape
 
     # assign a fixed color per agent
     colors = np.random.rand(N, 3)
+
 
     for t in range(T):
         plt.figure(figsize=(6, 6))
@@ -170,9 +197,11 @@ def plot_graph_over_time(positions, graph_sequence, title_prefix, weighted=False
         for i in range(N):
             plt.scatter(pos[i, 0], pos[i, 1], color=colors[i], s=40)
 
-        # plot edges
+        # plot edges (handle both directed and undirected graphs)
         for i in range(N):
-            for j in range(i + 1, N):
+            for j in range(N):
+                if i == j:
+                    continue
                 if weighted:
                     if G[i, j] > 0:
                         plt.plot(
@@ -193,56 +222,12 @@ def plot_graph_over_time(positions, graph_sequence, title_prefix, weighted=False
                         )
 
         plt.title(f"{title_prefix} (t={t})")
-        plt.xlim(-11, 11)
-        plt.ylim(-11, 11)
+        plt.xlim(bounds[0] - 1, bounds[1] + 1)
+        plt.ylim(bounds[2] - 1, bounds[3] + 1)
         plt.gca().set_aspect('equal', adjustable='box')
         plt.grid(True)
 
         plt.pause(0.5)
         plt.clf()
 
-    plt.close()
-
-
-def main() -> None:
-    config = GraphConfig()
-
-    trajectory = load_trajectory(config)
-    graphs = generate_graphs_for_trajectory(
-        trajectory=trajectory,
-        sensing_threshold=config.sensing_threshold,
-        communication_threshold=config.communication_threshold,
-    )
-    save_graphs(config.output_path, graphs)
-
-    print(f"Loaded trajectory shape: {trajectory.shape}")
-    print(f"Saved graphs to: {config.output_path}")
-    
-    print("\nPlotting Distance Graph over time...")
-    plot_graph_over_time(
-        graphs["positions"],
-        graphs["G_dist"],
-        title_prefix="Distance Graph",
-        weighted=True
-    )
-
-    print("\nPlotting Sensing Graph over time...")
-    plot_graph_over_time(
-        graphs["positions"],
-        graphs["G_sense"],
-        title_prefix="Sensing Graph",
-        weighted=False
-    )
-
-    print("\nPlotting Communication Graph over time...")
-    plot_graph_over_time(
-        graphs["positions"],
-        graphs["G_comm"],
-        title_prefix="Communication Graph",
-        weighted=False
-    )    
-    
-
-
-if __name__ == "__main__":
-    main()
+    plt.close('all')
