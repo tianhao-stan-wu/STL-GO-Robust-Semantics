@@ -44,28 +44,6 @@ ATOMIC_PREDICATES = {
 }
 
 
-@dataclass
-class TestConfig:
-    data_path: str = "../trajectory_data/2D_graphs.npz"
-    agent_id: int = 0
-    time_index: int = 0
-
-    # Use the distance graph for the simplest possible test.
-    graph_type: str = "dist"
-
-    # For weighted distance graph: keep edges whose distance is in this interval.
-    # Since the graph is undirected, In and Out will be equivalent.
-    weight_interval: Tuple[float, float] = (0.0, 5.0)
-
-    # Count interval for the graph operator.
-    # For N agents, the maximum number of eligible neighbors is N-1.
-    count_interval: Tuple[int, int] = (1, 4)
-
-    # Choose a simple geometric predicate over each neighbor state.
-    # Robustness is y-coordinate: positive means y >= 0.
-    predicate_name: str = "y_nonneg"
-
-
 # ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
@@ -125,7 +103,7 @@ def main():
         W=[0.0, 5.0], 
         E=[1, 4], 
         quantifier="exists", 
-        aggregator="min_max",
+        aggregator="hybrid",
         child=Predicate(mu=ATOMIC_PREDICATES["y_nonneg"], label="y_nonneg"))
 
     algebra = algebras["minmax"]

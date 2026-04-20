@@ -19,6 +19,7 @@ def aggregate(values, E, method):
     if method == 'min_max':     return _min_max(values, E)
     elif method == 'counting':  return _counting(values, E)
     elif method == 'averaging': return _averaging(values)
+    elif method == 'hybrid':    return _hybrid(values, E)
     else:
         raise ValueError(f"Unknown aggregation method: {method}")
 
@@ -74,5 +75,26 @@ def _counting(values, E):
 def _averaging(values):
     """Average robustness over all eligible neighbors."""
     return sum(values) / len(values)
+
+
+def _hybrid(values, E, alpha=10.0):
+    """
+    Hybrid aggregator: r_(e1) + alpha * (c_plus - e1)
+
+    """
+    e1, _e2 = E
+    vals = sorted(values, reverse=True)
+
+    def r(k):
+        # 1-indexed order statistic
+        if k <= 0:
+            return float("inf")
+        if k <= len(vals):
+            return float(vals[k - 1])
+        return float("-inf")
+
+    c = sum(1 for v in values if v > 0)
+    return float(r(e1) + alpha * (c - e1))
+
 
 
