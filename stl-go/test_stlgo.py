@@ -34,7 +34,8 @@ algebras = {"minmax": MinMaxAlgebra(),
 
 aggregators = {"minmax": "min_max",
                 "count": "counting",
-                "avg": "averaging"
+                "avg": "averaging",
+                "bool": "boolean"
 }
 
 
@@ -161,7 +162,7 @@ def main():
 
     phi_in, phi_out = build_example_specs(config)
     algebra = algebras["minmax"]
-    aggregator = aggregators["minmax"]
+    aggregator = aggregators["bool"]
 
     t = int(config.time_index)
     agent_id = int(config.agent_id)

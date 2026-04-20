@@ -20,6 +20,7 @@ def aggregate(values, E, method):
     elif method == 'counting':  return _counting(values, E)
     elif method == 'averaging': return _averaging(values)
     elif method == 'hybrid':    return _hybrid(values, E)
+    elif method == 'boolean':      return _bool(values, E)
     else:
         raise ValueError(f"Unknown aggregation method: {method}")
 
@@ -95,6 +96,16 @@ def _hybrid(values, E, alpha=10.0):
 
     c = sum(1 for v in values if v > 0)
     return float(r(e1) + alpha * (c - e1))
+
+
+def _bool(values, E):
+    """
+    return a boolean value of whether the number of satisfying neighbors lies in E
+    """
+    e1, e2 = E
+    count = sum(v > 0 for v in values)
+    return e1 <= count <= e2
+
 
 
 
