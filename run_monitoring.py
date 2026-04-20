@@ -107,7 +107,8 @@ algebras = {"minmax": MinMaxAlgebra(),
 
 aggregators = {"minmax": "min_max",
                 "count": "counting",
-                "avg": "averaging"
+                "avg": "averaging",
+                "bool": "boolean"
 }
 
 
