@@ -11,7 +11,7 @@ from syntax import Predicate, AgentFormula, In, Out, Eventually, Always, EXV
 
 # Define goal region (circle)
 GOAL_CENTER = (5, 5)
-GOAL_RADIUS = 0.0001
+GOAL_RADIUS = 10.0
 
 
 def distance_to_goal(position, goal_center, goal_radius):
@@ -33,42 +33,43 @@ ATOMIC_PREDICATES = {
     "goal": lambda state: distance_to_goal(state, GOAL_CENTER, GOAL_RADIUS),
 }
 
-def build_spec(agent_id: int) -> AgentFormula:
-    """Build STL-GO specification for an agent."""
-    graph_type = "sense" #"dist"
-    weight_interval = (0.0, 20.0)
+def build_spec(agent_id: int, iteration_level: int):
+    """Build STL-GO specification for an agent with nested IN operators.
+
+    Args:
+        agent_id: agent index
+        iteration_level: number of nested IN operators (1 = IN(pred), 2 = IN(IN(pred)), etc.)
+
+    Returns:
+        AgentFormula with nested IN operators
+    """
+    graph_type = "sense"
+    weight_interval = (1, 1)
     count_interval = (1, 4)
     predicate_name = "goal"
 
     pred = Predicate(mu=ATOMIC_PREDICATES[predicate_name], label=predicate_name)
 
-    # phi_in = AgentFormula(
-    #     agent_id=agent_id,
-    #     child=In(
-    #         graph_types=[graph_type],
-    #         W=weight_interval,
-    #         E=count_interval,
-    #         quantifier="exists",
-    #         child=pred,
-    #     ),
-    # )
-
-    phi_in = EXV(
-        child=In(
+    # Build nested IN operators from innermost to outermost
+    child = pred
+    for _ in range(iteration_level):
+        child = In(
             graph_types=[graph_type],
             W=weight_interval,
             E=count_interval,
             quantifier="exists",
-            child=pred,
-        ),
+            child=child,
+        )
+
+    phi_eventually = Eventually(
+        child=child,
+        interval=(0, 10)
     )
 
-    phi = Eventually(
-        child = phi_in,
-        interval = (0,10)
-    )
+    phi = EXV(child=phi_eventually)
 
-    # return phi_in
+    # print(phi)
+
     return phi
 
   

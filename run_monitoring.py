@@ -114,7 +114,7 @@ aggregators = {"minmax": "min_max",
                 "count": "counting",
                 "avg": "averaging",
                 "hybrid" : "hybrid",
-                "bool": "bool"
+                "bool": "boolean"
 }
 
 
@@ -130,8 +130,8 @@ if __name__ == "__main__":
     results = []
 
     # Load spec
-    spec_name = "recursive_in"  # Change to: "recursive_in", "recursive_out_in"
-    iteration_level = 1  # For specs that support iteration
+    spec_name = "recursive_out_in" # Change to: "recursive_in", "recursive_out_in"
+    iteration_level = 3 # For specs that support iteration
 
 
     print("\n" + "="*60)
@@ -153,10 +153,10 @@ if __name__ == "__main__":
     if not data_path.exists():
         raise FileNotFoundError(f"Data path not found: {data_path}")
 
-    data_dirs = sorted([d for d in data_path.iterdir() if d.is_dir() and d.name.startswith("data_")])
+    data_dirs = [d for d in data_path.iterdir() if d.is_dir() and d.name.startswith("data_")]
 
     start_time = time.time()
-    for data_dir in data_dirs:
+    for idx, data_dir in enumerate(data_dirs):
         traj_path: str = str(data_dir / "trajectory.npz")
         graph_path: str = str(data_dir / "graphs.npz")
         data = load_data(traj_path, graph_path)
@@ -171,11 +171,11 @@ if __name__ == "__main__":
         }
 
         # Build spec and evaluate robustness
-        # try:
-        phi = build_spec(agent_id, iteration_level=iteration_level)
-        # except TypeError:
-        #     # Spec doesn't support iteration_level parameter
-        #     phi = build_spec(agent_id)
+        try:
+            phi = build_spec(agent_id, iteration_level=iteration_level)
+        except TypeError:
+            # Spec doesn't support iteration_level parameter
+            phi = build_spec(agent_id)
 
         if data_dir == data_dirs[0]:
             print(f"\nSpecification: {phi}\n")
@@ -185,6 +185,10 @@ if __name__ == "__main__":
         computation_time = time.time() - computation_start
         results.append({"data_dir": data_dir.name, "robustness": robustness, "computation_time": computation_time})
 
+        # Log progress every 10 trajectories
+        if (idx + 1) % 10 == 0:
+            print(f"Processed {idx + 1} trajectories...")
+
     end_time = time.time()
     elapsed_time = end_time - start_time
 
@@ -193,11 +197,23 @@ if __name__ == "__main__":
     print("ROBUSTNESS SUMMARY")
     print("="*60)
     for result in results:
-        print(f"{result['data_dir']}: {result['robustness']:.4f}")
+        rob = result['robustness']
+        # if isinstance(algebra, BooleanAlgebra):
+        #     # Boolean algebra returns True/False
+        #     print(f"{result['data_dir']}: {bool(rob)}")
+        # else:
+        #     # MinMaxAlgebra returns numeric robustness
+        #     print(f"{result['data_dir']}: {rob:.4f}")
 
     # Count satisfying and violating traces
-    satisfying = sum(1 for r in results if r['robustness'] >= 0)
-    violating = sum(1 for r in results if r['robustness'] < 0)
+    if isinstance(algebra, BooleanAlgebra):
+        # For boolean algebra: count True and False
+        satisfying = sum(1 for r in results if bool(r['robustness']))
+        violating = sum(1 for r in results if not bool(r['robustness']))
+    else:
+        # For minmax algebra: count >= 0 and < 0
+        satisfying = sum(1 for r in results if r['robustness'] >= 0)
+        violating = sum(1 for r in results if r['robustness'] < 0)
 
     print("\n" + "="*60)
     print("SPECIFICATION STATUS")
@@ -223,7 +239,11 @@ if __name__ == "__main__":
     print(f"Aggregator: {aggregator}")
     print(f"Total traces processed: {len(results)}")
     print(f"Success rate: {satisfying}/{len(results)} ({100*satisfying/len(results):.1f}%)")
-    print(f"Average robustness: {np.mean([r['robustness'] for r in results]):.4f}")
-    print(f"Min robustness: {min(r['robustness'] for r in results):.4f}")
-    print(f"Max robustness: {max(r['robustness'] for r in results):.4f}")
+
+    # Additional statistics for MinMaxAlgebra
+    if isinstance(algebra, MinMaxAlgebra):
+        rob_values = [r['robustness'] for r in results]
+        print(f"Average robustness: {np.mean(rob_values):.4f}")
+        print(f"Min robustness: {min(rob_values):.4f}")
+        print(f"Max robustness: {max(rob_values):.4f}")
 

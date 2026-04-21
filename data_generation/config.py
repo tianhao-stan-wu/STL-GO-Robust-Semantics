@@ -24,5 +24,5 @@ class SimulationConfig2D:
     fov_angle: float = np.pi / 4  # ±45° field of view
 
     random_seed: int = 100
-    num_trajectories: int = 100
+    num_trajectories: int = 1000
     save_path: str = "trajectory_data/2D_data"
